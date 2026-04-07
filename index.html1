@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ja">
+<!--
+  BTC ダブルボトム監視ツール
+  GitHub Pages で公開して使用してください
+-->
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC ダブルボトム監視</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@300;400;700&display=swap');
+  :root {
+    --bg: #060a0f; --panel: #0c1219; --border: #1a2535;
+    --accent: #00e5ff; --accent2: #ff6b35; --green: #00ff88;
+    --red: #ff3366; --yellow: #ffd700; --text: #c8d8e8; --dim: #4a6080;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'Noto Sans JP', sans-serif; min-height: 100vh; overflow-x: hidden; }
+  body::before { content: ''; position: fixed; inset: 0; background-image: linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; z-index: 0; }
+  .container { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 10px; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 34px; height: 34px; background: linear-gradient(135deg, var(--accent), #0066ff); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-family: 'Space Mono', monospace; font-weight: 700; font-size: 14px; color: #000; }
+  .logo-text { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); letter-spacing: 0.12em; }
+  .logo-sub { font-size: 10px; color: var(--dim); }
+  .status-bar { display: flex; align-items: center; gap: 12px; font-family: 'Space Mono', monospace; font-size: 11px; flex-wrap: wrap; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); flex-shrink: 0; }
+  .status-dot.live { background: var(--green); box-shadow: 0 0 8px var(--green); animation: pulse 2s infinite; }
+  .status-dot.error { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+  .next-update { color: var(--dim); }
+  .next-update span { color: var(--accent); }
+  .error-banner { display: none; background: rgba(255,51,102,0.1); border: 1px solid rgba(255,51,102,0.5); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .error-banner.visible { display: block; }
+  .error-banner h3 { color: var(--red); font-size: 13px; margin-bottom: 8px; font-family: 'Space Mono', monospace; }
+  .error-banner p { font-size: 12px; color: var(--text); line-height: 1.8; }
+  .error-banner code { background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); }
+  .btn-retry { margin-top: 12px; background: var(--red); color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; cursor: pointer; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; position: relative; overflow: hidden; }
+  .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
+  .stat-label { font-size: 10px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 5px; font-family: 'Space Mono', monospace; }
+  .stat-value { font-family: 'Space Mono', monospace; font-size: 18px; font-weight: 700; color: #fff; }
+  .stat-value.green { color: var(--green); } .stat-value.red { color: var(--red); } .stat-value.yellow { color: var(--yellow); }
+  .stat-sub { font-size: 10px; color: var(--dim); margin-top: 2px; font-family: 'Space Mono', monospace; }
+  .chart-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .chart-title { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); letter-spacing: 0.1em; text-transform: uppercase; }
+  .chart-legend { display: flex; gap: 14px; font-size: 10px; color: var(--dim); font-family: 'Space Mono', monospace; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+  canvas { width: 100%; display: block; }
+  .loading-overlay { display: flex; align-items: center; justify-content: center; padding: 50px; flex-direction: column; gap: 14px; }
+  .spinner { width: 28px; height: 28px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .analysis-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .analysis-title { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 12px; }
+  .prob-meter { position: relative; height: 5px; background: var(--border); border-radius: 3px; margin: 6px 0; overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 3px; transition: width 1s ease; }
+  .prob-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .prob-label { font-size: 11px; color: var(--text); }
+  .prob-pct { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; }
+  .conditions-list { display: flex; flex-direction: column; gap: 7px; }
+  .condition-item { display: flex; align-items: center; gap: 9px; padding: 7px 9px; background: rgba(255,255,255,0.02); border-radius: 6px; font-size: 11px; border: 1px solid transparent; transition: all 0.3s; }
+  .condition-item.met { border-color: rgba(0,255,136,0.2); background: rgba(0,255,136,0.04); }
+  .condition-item.partial { border-color: rgba(255,215,0,0.2); background: rgba(255,215,0,0.04); }
+  .cond-icon { width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; background: var(--border); color: var(--dim); }
+  .condition-item.met .cond-icon { background: rgba(0,255,136,0.2); color: var(--green); }
+  .condition-item.partial .cond-icon { background: rgba(255,215,0,0.2); color: var(--yellow); }
+  .cond-text { flex: 1; color: var(--text); }
+  .cond-value { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--dim); }
+  .condition-item.met .cond-value { color: var(--green); } .condition-item.partial .cond-value { color: var(--yellow); }
+  .alert-box { border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; align-items: flex-start; gap: 12px; border: 1px solid; opacity: 0; transform: translateY(-6px); transition: all 0.4s ease; }
+  .alert-box.visible { opacity: 1; transform: translateY(0); }
+  .alert-box.warning { background: rgba(255,215,0,0.06); border-color: rgba(255,215,0,0.4); }
+  .alert-box.danger { background: rgba(255,107,53,0.08); border-color: rgba(255,107,53,0.5); animation: alertPulse 2s infinite; }
+  .alert-box.info { background: rgba(0,229,255,0.05); border-color: rgba(0,229,255,0.3); }
+  @keyframes alertPulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,107,53,0)}50%{box-shadow:0 0 20px 4px rgba(255,107,53,.15)} }
+  .alert-icon { font-size: 20px; line-height: 1; }
+  .alert-title { font-family: 'Space Mono', monospace; font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .alert-box.warning .alert-title { color: var(--yellow); } .alert-box.danger .alert-title { color: var(--accent2); } .alert-box.info .alert-title { color: var(--accent); }
+  .alert-body { font-size: 11px; color: var(--text); line-height: 1.6; }
+  .log-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .log-title { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--dim); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+  .log-list { max-height: 130px; overflow-y: auto; }
+  .log-item { display: flex; gap: 10px; font-family: 'Space Mono', monospace; font-size: 10px; padding: 4px 0; border-bottom: 1px solid rgba(26,37,53,0.5); line-height: 1.5; }
+  .log-time { color: var(--dim); flex-shrink: 0; } .log-msg { color: var(--text); }
+  .log-msg.ok { color: var(--green); } .log-msg.warn { color: var(--yellow); } .log-msg.alert { color: var(--accent2); }
+  .btn-notify { background: linear-gradient(135deg, var(--accent), #0066ff); color: #000; border: none; border-radius: 6px; padding: 7px 14px; font-family: 'Space Mono', monospace; font-size: 10px; font-weight: 700; cursor: pointer; letter-spacing: 0.1em; text-transform: uppercase; }
+  .btn-notify:disabled { opacity: 0.5; cursor: not-allowed; }
+  @media (max-width: 600px) {
+    .stats-row { grid-template-columns: repeat(2, 1fr); }
+    .analysis-grid { grid-template-columns: 1fr; }
+    .stat-value { font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">₿</div>
+      <div>
+        <div class="logo-text">BTC ダブルボトム監視</div>
+        <div class="logo-sub">4時間足 / 1時間ごと自動更新</div>
+      </div>
+    </div>
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText" style="color:var(--dim)">接続中...</span>
+      <div class="next-update">次回: <span id="nextUpdate">--:--</span></div>
+      <button class="btn-notify" id="notifyBtn" onclick="requestNotify()">通知ON</button>
+    </div>
+  </div>
+  <div class="error-banner" id="errorBanner">
+    <h3>⚠️ データ取得エラー</h3>
+    <p id="errorMsg"></p>
+    <button class="btn-retry" onclick="refresh()">再試行する</button>
+  </div>
+  <div class="alert-box" id="alertBox">
+    <div class="alert-icon" id="alertIcon">⚠️</div>
+    <div>
+      <div class="alert-title" id="alertTitle"></div>
+      <div class="alert-body" id="alertBody"></div>
+    </div>
+  </div>
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">現在価格</div>
+      <div class="stat-value" id="currentPrice">--</div>
+      <div class="stat-sub" id="priceChange">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">高値 (10日)</div>
+      <div class="stat-value green" id="highVal">--</div>
+      <div class="stat-sub">10日間の最高値</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">安値 (10日)</div>
+      <div class="stat-value red" id="lowVal">--</div>
+      <div class="stat-sub">10日間の最安値</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">シグナル</div>
+      <div class="stat-value yellow" id="signalScore">--</div>
+      <div class="stat-sub" id="signalLabel">--</div>
+    </div>
+  </div>
+  <div class="chart-panel">
+    <div class="chart-header">
+      <div class="chart-title">BTC/JPY — 4時間足</div>
+      <div class="chart-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#00e5ff"></div>終値</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff3366"></div>B1/B2</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ffd700"></div>ネック</div>
+      </div>
+    </div>
+    <div id="chartArea">
+      <div class="loading-overlay">
+        <div class="spinner"></div>
+        <div style="font-size:11px;color:var(--dim);font-family:monospace">データ取得中...</div>
+      </div>
+    </div>
+  </div>
+  <div class="analysis-grid">
+    <div class="analysis-card">
+      <div class="analysis-title">形成確率</div>
+      <div id="probList"></div>
+    </div>
+    <div class="analysis-card">
+      <div class="analysis-title">条件チェック</div>
+      <div class="conditions-list" id="condList"></div>
+    </div>
+  </div>
+  <div class="log-panel">
+    <div class="log-title">ログ</div>
+    <div class="log-list" id="logList"></div>
+  </div>
+</div>
+<script>
+'use strict';
+const REFRESH_MS = 60 * 60 * 1000;
+let notifyEnabled = false;
+let candles = [];
+let analysis = {};
+let countdownTimer = null;
+
+async function tryFetch(url, timeoutMs) {
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), timeoutMs || 12000);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(tid);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return res;
+  } catch(e) { clearTimeout(tid); throw e; }
+}
+
+async function fetchCandles() {
+  try {
+    addLog('API接続中 [CryptoCompare]...');
+    const res = await tryFetch('https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=JPY&limit=240&aggregate=4');
+    const json = await res.json();
+    if (json.Response !== 'Success') throw new Error(json.Message || 'bad response');
+    const data = json.Data.Data;
+    addLog('取得成功 [CryptoCompare] ' + data.length + '本', 'ok');
+    return data.map(d => ({ t: d.time*1000, o: d.open, h: d.high, l: d.low, c: d.close, v: d.volumefrom }));
+  } catch(e) { addLog('失敗 [CryptoCompare] ' + e.message, 'warn'); }
+
+  try {
+    addLog('API接続中 [Proxy→CoinGecko]...');
+    const target = encodeURIComponent('https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=jpy&days=10');
+    const res = await tryFetch('https://api.allorigins.win/get?url=' + target);
+    const w = await res.json();
+    const data = JSON.parse(w.contents);
+    if (!Array.isArray(data) || !data.length) throw new Error('empty');
+    addLog('取得成功 [Proxy→CoinGecko] ' + data.length + '本', 'ok');
+    return data.map(d => ({ t: d[0], o: d[1], h: d[2], l: d[3], c: d[4], v: 0 }));
+  } catch(e) { addLog('失敗 [Proxy] ' + e.message, 'warn'); }
+
+  try {
+    addLog('API接続中 [CoinGecko]...');
+    const res = await tryFetch('https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=jpy&days=10');
+    const data = await res.json();
+    if (!Array.isArray(data) || !data.length) throw new Error('empty');
+    addLog('取得成功 [CoinGecko] ' + data.length + '本', 'ok');
+    return data.map(d => ({ t: d[0], o: d[1], h: d[2], l: d[3], c: d[4], v: 0 }));
+  } catch(e) { addLog('失敗 [CoinGecko] ' + e.message, 'warn'); }
+
+  throw new Error('全APIへの接続に失敗しました。インターネット接続を確認してください。');
+}
+ function findLocalMinima(data, win) {
+  const out = [];
+  for (let i = win; i < data.length - win; i++) {
+    let ok = true;
+    for (let j = i-win; j <= i+win; j++) { if (j!==i && data[j].l <= data[i].l) { ok=false; break; } }
+    if (ok) out.push({ idx: i, price: data[i].l, time: data[i].t });
+  }
+  return out;
+}
+
+function analyzeDoubleBottom(data) {
+  const minima = findLocalMinima(data, 3);
+  if (minima.length < 2) return { score:0, stage:'none', conds:{} };
+  const b1 = minima[minima.length-2], b2 = minima[minima.length-1];
+  const priceDiff = Math.abs(b1.price-b2.price)/b1.price;
+  const distBars = b2.idx - b1.idx;
+  const neckPrice = Math.max(...data.slice(b1.idx, b2.idx+1).map(d=>d.h));
+  const last = data[data.length-1];
+  const rebound1 = (neckPrice-b1.price)/b1.price;
+  const rebound2 = (last.c-b2.price)/b2.price;
+  const neckBreak = last.c >= neckPrice;
+  const neckApproach = !neckBreak && (neckPrice-last.c)/neckPrice < 0.02;
+  let score = 0; const conds = {};
+  conds.priceSymmetry = priceDiff<0.02?'met':priceDiff<0.04?'partial':'none';
+  score += conds.priceSymmetry==='met'?30:conds.priceSymmetry==='partial'?15:0;
+  conds.timeDistance = (distBars>=5&&distBars<=20)?'met':(distBars>=3&&distBars<=30)?'partial':'none';
+  score += conds.timeDistance==='met'?20:conds.timeDistance==='partial'?10:0;
+  conds.rebound1 = rebound1>=0.05?'met':rebound1>=0.02?'partial':'none';
+  score += conds.rebound1==='met'?20:conds.rebound1==='partial'?10:0;
+  conds.rebound2 = rebound2>=0.03?'met':rebound2>=0.01?'partial':'none';
+  score += conds.rebound2==='met'?20:conds.rebound2==='partial'?10:0;
+  conds.neckLine = neckBreak?'met':neckApproach?'partial':'none';
+  score += conds.neckLine==='met'?10:conds.neckLine==='partial'?5:0;
+  const stage = score>=80?'confirmed':score>=55?'forming':score>=30?'early':'none';
+  return { score, stage, b1, b2, neckPrice, priceDiff, distBars, rebound1, rebound2, neckBreak, neckApproach, conds, minima };
+}
+
+function drawChart(data, anal) {
+  const area = document.getElementById('chartArea');
+  area.innerHTML = '';
+  const cvs = document.createElement('canvas');
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  const W = area.offsetWidth || 360, H = 240;
+  cvs.width = W*dpr; cvs.height = H*dpr;
+  cvs.style.width = W+'px'; cvs.style.height = H+'px';
+  area.appendChild(cvs);
+  const ctx = cvs.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const pad = {t:16, r:80, b:30, l:4};
+  const cw = W-pad.l-pad.r, ch = H-pad.t-pad.b;
+  const prices = data.flatMap(d=>[d.h,d.l]);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const range = maxP-minP||1;
+  const sx = i => pad.l + (i/(data.length-1))*cw;
+  const sy = p => pad.t + ch - ((p-minP)/range)*ch;
+  ctx.fillStyle='#0c1219'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(26,37,53,0.8)'; ctx.lineWidth=1;
+  for (let i=0;i<=4;i++) {
+    const y=pad.t+(ch/4)*i;
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    ctx.fillStyle='#4a6080'; ctx.font='9px monospace'; ctx.textAlign='left';
+    ctx.fillText('¥'+Math.round(maxP-(range/4)*i).toLocaleString('ja-JP'), W-pad.r+4, y+3);
+  }
+  const barW = Math.max(1.5, cw/data.length-1);
+  data.forEach((d,i) => {
+    const x=sx(i), bull=d.c>=d.o;
+    ctx.strokeStyle=bull?'#00ff88':'#ff3366'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,sy(d.h)); ctx.lineTo(x,sy(d.l)); ctx.stroke();
+    ctx.fillStyle=bull?'rgba(0,255,136,0.75)':'rgba(255,51,102,0.75)';
+    const top=Math.min(sy(d.o),sy(d.c));
+    ctx.fillRect(x-barW/2, top, barW, Math.max(1,Math.abs(sy(d.c)-sy(d.o))));
+  });
+  ctx.strokeStyle='rgba(0,229,255,0.45)'; ctx.lineWidth=1.5; ctx.setLineDash([]);
+  ctx.beginPath();
+  data.forEach((d,i) => i===0?ctx.moveTo(sx(i),sy(d.c)):ctx.lineTo(sx(i),sy(d.c)));
+  ctx.stroke();
+  if (anal.neckPrice) {
+    const y=sy(anal.neckPrice);
+    ctx.strokeStyle='#ffd700'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();
+    ctx.setLineDash([]); ctx.fillStyle='#ffd700'; ctx.font='bold 9px monospace'; ctx.textAlign='left';
+    ctx.fillText('NECK', W-pad.r+4, y-2);
+  }
+  [{b:anal.b1,color:'#ff3366',label:'B1'},{b:anal.b2,color:'#ff6b35',label:'B2'}].forEach(({b,color,label}) => {
+    if (!b) return;
+    const x=sx(b.idx), y=sy(b.price);
+    ctx.beginPath(); ctx.arc(x,y,5,0,Math.PI*2); ctx.fillStyle=color; ctx.fill();
+    ctx.fillStyle=color; ctx.font='bold 10px monospace'; ctx.textAlign='center';
+    ctx.fillText(label, x, y+15);
+  });
+  ctx.fillStyle='#4a6080'; ctx.font='9px monospace'; ctx.textAlign='center';
+  const step=Math.max(1,Math.floor(data.length/5));
+  for (let i=0;i<data.length;i+=step) {
+    const d=new Date(data[i].t);
+    ctx.fillText((d.getMonth()+1)+'/'+d.getDate(), sx(i), H-4);
+  }function fmt(n) { return '¥'+Math.round(n).toLocaleString('ja-JP'); }
+const $=id=>document.getElementById(id);
+
+function updateStats(data, anal) {
+  const last=data[data.length-1], prev=data[data.length-2]||last;
+  const chg=(last.c-prev.c)/prev.c*100;
+  $('currentPrice').textContent=fmt(last.c);
+  $('currentPrice').className='stat-value '+(chg>=0?'green':'red');
+  $('priceChange').textContent=(chg>=0?'▲':'▼')+Math.abs(chg).toFixed(2)+'%';
+  $('highVal').textContent=fmt(Math.max(...data.map(d=>d.h)));
+  $('lowVal').textContent=fmt(Math.min(...data.map(d=>d.l)));
+  const s=anal.score||0;
+  $('signalScore').textContent=s+'%';
+  $('signalScore').className='stat-value '+(s>=70?'green':s>=40?'yellow':'red');
+  $('signalLabel').textContent=s>=70?'高確率':s>=40?'形成中':'未検知';
+}
+
+function updateProbabilities(anal) {
+  const c=anal.conds||{}, s2p=s=>s==='met'?90:s==='partial'?55:12;
+  $('probList').innerHTML=[
+    {label:'総合スコア',pct:anal.score||0},
+    {label:'安値の対称性',pct:s2p(c.priceSymmetry)},
+    {label:'リバウンド強度',pct:s2p(c.rebound1)},
+    {label:'ネックライン',pct:s2p(c.neckLine)},
+  ].map(({label,pct})=>{
+    const color=pct>=70?'#00ff88':pct>=40?'#ffd700':'#ff3366';
+    return `<div style="margin-bottom:9px">
+      <div class="prob-row"><span class="prob-label">${label}</span><span class="prob-pct" style="color:${color}">${pct}%</span></div>
+      <div class="prob-meter"><div class="prob-fill" style="width:${pct}%;background:linear-gradient(90deg,${color}88,${color})"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function updateConditions(anal) {
+  const c=anal.conds||{};
+  $('condList').innerHTML=[
+    {key:'priceSymmetry',text:'B1・B2の安値差',val:anal.priceDiff!=null?(anal.priceDiff*100).toFixed(1)+'%':'--',icon:'◎'},
+    {key:'timeDistance', text:'ボトム間の距離', val:anal.distBars!=null?anal.distBars+'本':'--',icon:'⏱'},
+    {key:'rebound1',     text:'B1後の反発',    val:anal.rebound1!=null?(anal.rebound1*100).toFixed(1)+'%':'--',icon:'↑'},
+    {key:'rebound2',     text:'B2後の反発',    val:anal.rebound2!=null?(anal.rebound2*100).toFixed(1)+'%':'--',icon:'↑'},
+    {key:'neckLine',     text:'ネックライン',   val:anal.neckBreak?'突破済':anal.neckApproach?'接近中':'未接近',icon:'━'},
+  ].map(({key,text,val,icon})=>{
+    const st=c[key]||'none';
+    return `<div class="condition-item ${st==='met'?'met':st==='partial'?'partial':''}">
+      <div class="cond-icon">${icon}</div><div class="cond-text">${text}</div><div class="cond-value">${val}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateAlert(anal) {
+  const box=$('alertBox'); box.className='alert-box';
+  const cfg={
+    confirmed:{cls:'danger', icon:'🚨',title:'ダブルボトム確認！',body:`スコア ${anal.score}% — B1:${fmt(anal.b1?.price||0)} B2:${fmt(anal.b2?.price||0)} ネック:${fmt(anal.neckPrice||0)}`},
+    forming:  {cls:'warning',icon:'⚠️',title:'ダブルボトム形成中',body:`スコア ${anal.score}% — ネックライン ${fmt(anal.neckPrice||0)} のブレイク待ち`},
+    early:    {cls:'info',   icon:'🔍',title:'初期パターン検知',  body:`スコア ${anal.score}% — 様子見`},
+  }[anal.stage];
+  if (cfg) {
+    box.classList.add('visible',cfg.cls);
+    $('alertIcon').textContent=cfg.icon;
+    $('alertTitle').textContent=cfg.title;
+    $('alertBody').textContent=cfg.body;
+    if (notifyEnabled) { try { new Notification(cfg.icon+' BTC: '+cfg.title,{body:cfg.body}); } catch(e){} }
+  }
+}
+
+function showError(msg) {
+  $('errorBanner').classList.add('visible');
+  $('errorMsg').innerHTML=msg.replace(/\n/g,'<br>');
+  $('statusDot').className='status-dot error';
+  $('statusText').textContent='エラー';
+}
+
+function addLog(msg, type) {
+  const list=$('logList');
+  const time=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const item=document.createElement('div');
+  item.className='log-item';
+  item.innerHTML=`<span class="log-time">${time}</span><span class="log-msg ${type||''}">${msg}</span>`;
+  list.insertBefore(item,list.firstChild);
+  while(list.children.length>50) list.removeChild(list.lastChild);
+}
+
+async function requestNotify() {
+  if (!('Notification' in window)) { alert('このブラウザは通知未対応です'); return; }
+  const p=await Notification.requestPermission();
+  if (p==='granted') {
+    notifyEnabled=true;
+    $('notifyBtn').textContent='通知 ON ✓';
+    $('notifyBtn').disabled=true;
+    addLog('通知が有効になりました','ok');
+  } else {
+    addLog('通知が許可されませんでした','warn');
+  }
+}
+
+function startCountdown() {
+  const end=Date.now()+REFRESH_MS;
+  if (countdownTimer) clearInterval(countdownTimer);
+  countdownTimer=setInterval(()=>{
+    const rem=Math.max(0,end-Date.now());
+    $('nextUpdate').textContent=String(Math.floor(rem/60000)).padStart(2,'0')+':'+String(Math.floor((rem%60000)/1000)).padStart(2,'0');
+  },1000);
+}
+
+async function refresh() {
+  $('errorBanner').classList.remove('visible');
+  $('statusDot').className='status-dot';
+  $('statusText').textContent='取得中...';
+  $('probList').innerHTML='';
+  try {
+    candles=await fetchCandles();
+    analysis=analyzeDoubleBottom(candles);
+    drawChart(candles,analysis);
+    updateStats(candles,analysis);
+    updateProbabilities(analysis);
+    updateConditions(analysis);
+    updateAlert(analysis);
+    $('statusDot').className='status-dot live';
+    $('statusText').textContent='LIVE';
+    const sm={confirmed:'🚨確認',forming:'⚠️形成中',early:'🔍初期',none:'未検知'};
+    addLog(`更新完了 ${fmt(candles[candles.length-1].c)} スコア:${analysis.score}% ${sm[analysis.stage]||''}`,
+      analysis.stage==='confirmed'?'alert':analysis.stage==='forming'?'warn':'ok');
+    startCountdown();
+  } catch(err) {
+    showError(err.message);
+    addLog('エラー: '+err.message,'warn');
+  }
+}
+
+window.addEventListener('load',()=>{ addLog('起動','ok'); refresh(); setInterval(refresh,REFRESH_MS); });
+window.addEventListener('resize',()=>{ if(candles.length) drawChart(candles,analysis); });
+</script>
+</body>
+</html>
+}
